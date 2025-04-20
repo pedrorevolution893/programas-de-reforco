@@ -1,5 +1,5 @@
 # Simulador de Reforço
-
+Baseado no software das caixas de Skinner desenvolvido pelo professor Dr. Carlos Eduardo Costa (Caê)
 Simulador interativo desenvolvido para fins acadêmicos e educacionais.  
 Permite explorar os esquemas de reforço do tipo **FR (Fixed Ratio)** e **FI (Fixed Interval)** com gráfico de registro cumulativo, exportação de dados e visualização em tempo real.
 
