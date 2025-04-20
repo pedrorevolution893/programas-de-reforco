@@ -1,0 +1,269 @@
+
+<!DOCTYPE html>
+
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<title>Simulador de Reforço - Linha Reta + Marcação Visível</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js">
+function exportarDados() {
+  const linhas = [
+    "tempo,respostas,reforcos",
+    ...chart.data.labels.map((t, i) => {
+      return `${t},${chart.data.datasets[0].data[i] ?? ''},${chart.data.datasets[1].data.find(p => p.x === t)?.y ?? ''}`;
+    })
+  ];
+  const blob = new Blob([linhas.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "dados_sessao.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportarGrafico() {
+  const link = document.createElement('a');
+  link.download = 'grafico_sessao.png';
+  link.href = document.getElementById('chart').toDataURL('image/png');
+  link.click();
+}
+
+</script>
+<style>
+    body {
+      background: #111;
+      color: #0f0;
+      font-family: sans-serif;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    canvas {
+      background: #222;
+      border: 1px solid #0f0;
+      margin-bottom: 20px;
+    }
+    button {
+      margin: 5px;
+      padding: 6px 12px;
+      background: #222;
+      color: #0f0;
+      border: 1px solid #0f0;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .light {
+      width: 30px;
+      height: 30px;
+      background: #0f0;
+      border-radius: 50%;
+      box-shadow: 0 0 10px #0f0;
+      opacity: 0;
+      transition: opacity 0.2s;
+      margin: 10px auto;
+    }
+    .light.active {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body><div style="margin-top: 30px; text-align: center;">
+<button onclick="exportarDados()" style="margin-right: 10px;">📄 Exportar Dados da Sessão</button>
+<button onclick="exportarGrafico()">🖼️ Exportar Gráfico</button>
+</div><div style="text-align:center; margin-top:30px; font-size:0.8rem; color:#0f0;">
+<p>Licença de Uso - Simulador de Reforço</p>
+<p>Criado por: Pedro Aché Sales<br/>
+     Coautoria: ChatGPT (OpenAI)</p>
+<p>Distribuído gratuitamente para fins acadêmicos e educacionais.<br/>
+     É proibido remover os créditos ou utilizar comercialmente sem autorização.</p>
+</div>
+<h1>Simulador de Reforço</h1>
+<canvas height="200" id="chart" width="600"></canvas>
+<div class="assinatura">
+<p style="font-size:0.9rem; color:#0f0; margin: 4px;">Criado por: Pedro Aché Sales</p>
+<p style="font-size:0.85rem; color:#088; margin: 4px;">Coautoria: ChatGPT (OpenAI)</p>
+</div>
+<div>
+    Esquema:
+    <select id="esquema">
+<option value="FR">FR</option>
+<option value="FI">FI</option>
+</select>
+<span id="frConfig">FR: <input id="frValor" min="1" type="number" value="1"/></span>
+<span id="fiConfig" style="display:none;">FI: <input id="fiValor" min="1" type="number" value="5"/></span>
+</div>
+<div class="light" id="reforcoLight"></div>
+<div>
+<button id="start">Start</button>
+<button id="reset">Reset</button>
+</div>
+<div>
+<p id="contador">Respostas: 0</p>
+<p id="reforcos">Reforços: 0</p>
+<p id="tempoResposta">Tempo desde última resposta: -</p>
+<p id="tempoReforco">Tempo desde último reforço: -</p>
+<p id="tempoSessao">Tempo de sessão: 0s</p>
+</div>
+<script>
+    const chart = new Chart(document.getElementById("chart").getContext("2d"), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Respostas acumuladas',
+            data: [],
+            borderColor: '#0f0',
+            backgroundColor: 'transparent',
+            pointRadius: 0,
+            tension: 0.1
+          },
+          {
+            label: 'Reforços',
+            data: [],
+            borderColor: 'transparent',
+            backgroundColor: '#f00',
+            pointRadius: 6,
+            type: 'scatter',
+            showLine: false
+          }
+        ]
+      },
+      options: {
+        responsive: false,
+        animation: false,
+        plugins: { legend: { display: false }},
+        scales: {
+          x: { title: { display: true, text: 'Tempo (s)' }},
+          y: { title: { display: true, text: 'Respostas' }, beginAtZero: true }
+        }
+      }
+    });
+
+    let tempo = 0, respostas = 0, reforcos = 0;
+    let running = false;
+    let intervalo, fiTimer = null, fiDisponivel = false;
+    let ultimaResposta = Date.now(), ultimoReforco = Date.now();
+
+    const contador = document.getElementById("contador");
+    const reforcoContador = document.getElementById("reforcos");
+    const tempoResp = document.getElementById("tempoResposta");
+    const tempoRef = document.getElementById("tempoReforco");
+    const tempoSessao = document.getElementById("tempoSessao");
+    const light = document.getElementById("reforcoLight");
+
+    function atualizarTempos() {
+      const agora = Date.now();
+      tempoResp.textContent = `Tempo desde última resposta: ${running ? Math.floor((agora - ultimaResposta)/1000) + 's' : '-'}`;
+      tempoRef.textContent = `Tempo desde último reforço: ${running ? Math.floor((agora - ultimoReforco)/1000) + 's' : '-'}`;
+      tempoSessao.textContent = `Tempo de sessão: ${tempo}s`;
+      requestAnimationFrame(atualizarTempos);
+    }
+    atualizarTempos();
+
+    function marcarReforco() {
+      light.classList.add("active");
+      setTimeout(() => light.classList.remove("active"), 300);
+      reforcos++;
+      ultimoReforco = Date.now();
+      reforcoContador.textContent = "Reforços: " + reforcos;
+      chart.data.datasets[1].data.push({ x: tempo, y: respostas });
+    }
+
+    function iniciarFITimer() {
+      clearTimeout(fiTimer);
+      fiDisponivel = false;
+      const fiValor = parseInt(document.getElementById("fiValor").value);
+      fiTimer = setTimeout(() => fiDisponivel = true, fiValor * 1000);
+    }
+
+    document.getElementById("esquema").onchange = (e) => {
+      const tipo = e.target.value;
+      document.getElementById("frConfig").style.display = tipo === "FR" ? "inline" : "none";
+      document.getElementById("fiConfig").style.display = tipo === "FI" ? "inline" : "none";
+      if (tipo === "FI") iniciarFITimer();
+    };
+
+    document.getElementById("start").onclick = () => {
+      document.getElementById("esquema").disabled = true;
+      document.getElementById("frValor").disabled = true;
+      document.getElementById("fiValor").disabled = true;
+      if (running) return;
+      running = true;
+      tempo = 0;
+      ultimaResposta = Date.now();
+      ultimoReforco = Date.now();
+      intervalo = setInterval(() => {
+        tempo++;
+        chart.data.labels.push(tempo);
+        chart.data.datasets[0].data.push(respostas);
+        chart.update();
+      }, 1000);
+    };
+
+    document.getElementById("reset").onclick = () => {
+      document.getElementById("esquema").disabled = false;
+      document.getElementById("frValor").disabled = false;
+      document.getElementById("fiValor").disabled = false;
+      clearInterval(intervalo);
+      clearTimeout(fiTimer);
+      running = false;
+      tempo = respostas = reforcos = 0;
+      chart.data.labels = [];
+      chart.data.datasets[0].data = [];
+      chart.data.datasets[1].data = [];
+      chart.update();
+      contador.textContent = "Respostas: 0";
+      reforcoContador.textContent = "Reforços: 0";
+      tempoResp.textContent = "Tempo desde última resposta: -";
+      tempoRef.textContent = "Tempo desde último reforço: -";
+      tempoSessao.textContent = "Tempo de sessão: 0s";
+    };
+
+    window.onkeydown = (e) => {
+      if (e.code === "Space" && running) {
+        respostas++;
+        ultimaResposta = Date.now();
+        contador.textContent = "Respostas: " + respostas;
+        const esquema = document.getElementById("esquema").value;
+        if (esquema === "FR") {
+          const frVal = parseInt(document.getElementById("frValor").value);
+          if (respostas % frVal === 0) marcarReforco();
+        }
+        if (esquema === "FI" && fiDisponivel) {
+          marcarReforco();
+          iniciarFITimer();
+        }
+      }
+    };
+  
+function exportarDados() {
+  const linhas = [
+    "tempo,respostas,reforcos",
+    ...chart.data.labels.map((t, i) => {
+      return `${t},${chart.data.datasets[0].data[i] ?? ''},${chart.data.datasets[1].data.find(p => p.x === t)?.y ?? ''}`;
+    })
+  ];
+  const blob = new Blob([linhas.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "dados_sessao.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportarGrafico() {
+  const link = document.createElement('a');
+  link.download = 'grafico_sessao.png';
+  link.href = document.getElementById('chart').toDataURL('image/png');
+  link.click();
+}
+
+</script>
+
+
+</body>
+</html>
